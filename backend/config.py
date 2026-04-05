@@ -9,9 +9,9 @@ class Settings(BaseSettings):
     gcp_project_id: str = "project-901e5f96-55af-4675-abe"
     gcp_region: str = "us-central1"
 
-    # Database — updated defaults for csql-workbrain / workbrain_user # update password during deployment
+    # Database — updated defaults for csql-workbrain / workbrain_user 
     db_user: str = "workbrain_user"       # dedicated app user — upsert access only
-    db_password: str = "password"         # update password during deployment
+    db_password: str = "password"         
     database_url: str = f"postgresql+asyncpg://{db_user}:{db_password}@127.0.0.1:5432/workbrain"
     cloud_sql_instance: str = ""          # e.g. your-project:us-central1:csql-workbrain
     db_name: str = "workbrain"

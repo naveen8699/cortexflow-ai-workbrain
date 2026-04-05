@@ -44,10 +44,10 @@ curl -o cloud-sql-proxy \
 chmod +x cloud-sql-proxy
 
 # Start proxy (keep this terminal open)
-./cloud-sql-proxy YOUR_PROJECT:us-central1:workbrain-db --port=5432
+./cloud-sql-proxy YOUR_PROJECT:us-central1:csql-workbrain --port=5432
 
 # Apply schema (new terminal)
-PGPASSWORD=WorkBrain2024! psql -h 127.0.0.1 -U postgres -d workbrain -f scripts/schema.sql
+PGPASSWORD=WorkBrain2024! psql -h 127.0.0.1 -U workbrain_user -d workbrain -f scripts/schema.sql
 ```
 
 ### Step 3 — Backend
