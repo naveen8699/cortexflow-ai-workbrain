@@ -1,4 +1,4 @@
-# WorkBrain — AI Personal Operating System
+# WorkBrain by CortexFlow — AI Personal Operating System
 **Google ADK + Vertex AI + CopilotKit AG-UI + Cloud Run + Cloud SQL**
 
 > Turn meeting transcripts into fully executed action plans. 5 AI agents coordinate to extract tasks, calculate cognitive load, create calendar events, and produce task cards — autonomously.

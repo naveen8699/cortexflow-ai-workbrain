@@ -3,8 +3,8 @@ import './globals.css';
 import { WorkBrainProvider } from '@/components/copilot/CopilotProvider';
 
 export const metadata: Metadata = {
-  title: 'WorkBrain — AI Personal Operating System',
-  description: 'Turn meetings into executed action plans with AI agents',
+  title: 'WorkBrain by CortexFlow',
+  description: 'CortexFlow presents WorkBrain — AI-powered meeting execution engine',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

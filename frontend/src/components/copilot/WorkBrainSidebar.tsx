@@ -39,8 +39,8 @@ You help users process meetings, manage cognitive load, and understand AI decisi
 Reference the dashboard state provided. Be concise and specific.
 For meeting processing, guide users to use the Process Meeting panel.`}
       labels={{
-        title: 'WorkBrain AI',
-        initial: "I'm WorkBrain AI. Paste a meeting transcript or ask about your workload.",
+        title: 'WorkBrain AI — by CortexFlow',
+        initial: "I'm WorkBrain AI by CortexFlow. Paste a meeting transcript or ask about your workload.",
         placeholder: 'Ask about your workload or decisions...',
       }}
     />

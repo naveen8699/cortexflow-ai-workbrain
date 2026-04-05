@@ -19,7 +19,10 @@ export function TopNav() {
         <div className="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center">
           <Brain className="w-4 h-4 text-white" />
         </div>
-        <span className="font-semibold text-gray-900 text-sm">WorkBrain</span>
+        <div className="flex flex-col leading-tight">
+          <span className="font-semibold text-gray-900 text-sm">WorkBrain</span>
+          <span className="text-xs text-gray-400">by CortexFlow</span>
+        </div>
         <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
           ADK · Vertex AI
         </span>
