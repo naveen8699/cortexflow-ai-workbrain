@@ -385,8 +385,7 @@ firebase deploy --only hosting --project workbrain-cortexflow-project
 | Name | Role |
 |------|------|
 | Naveen M | Full Stack + AI Engineering |
-| Ravi Kumar | Backend + Infrastructure |
-| Sushma M | Frontend + UX |
+
 
 ---
 
