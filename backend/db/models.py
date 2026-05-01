@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy.dialects import postgresql
+
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -79,7 +81,7 @@ class DecisionLog(Base):
     agent: Mapped[str] = mapped_column(String, nullable=False)
     decision: Mapped[str] = mapped_column(String, nullable=False)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
-    metadata: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    meta_data: Mapped[Optional[dict]] = mapped_column("metadata", JSON, nullable=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
 
     meeting: Mapped[Optional["Meeting"]] = relationship("Meeting", back_populates="decisions")

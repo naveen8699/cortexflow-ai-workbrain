@@ -72,7 +72,7 @@ export default function DashboardPage() {
                   <ProcessMeetingForm onComplete={refetch} />
                   <div className="space-y-4">
                     <AddTaskForm onComplete={refetch} />
-                    <CognitiveLoadPanel states={data.cognitive_states} />
+                    <CognitiveLoadPanel states={data.cognitive_states} onRefresh={refetch} />
                   </div>
                 </div>
 

@@ -1,0 +1,92 @@
+sources:
+  alloydb-workbrain:
+    kind: alloydb-postgres
+    project: workbrain-cortexflow-project
+    region: us-central1
+    cluster: workbrain-cluster
+    instance: primary
+    database: workbrain
+    user: db_user
+    password: password
+
+tools:
+  get_action_items:
+    kind: postgres-sql
+    source: alloydb-workbrain
+    description: Get all pending action items optionally filtered by owner name
+    parameters:
+      - name: owner
+        type: string
+        description: Owner name to filter by. Use empty string for all owners.
+    statement: |
+      SELECT id, title, owner, deadline, priority, complexity, 
+             duration_minutes, status, calendar_event_id, task_id
+      FROM workbrain_schema.action_items
+      WHERE user_id = 'demo_user'
+        AND (owner = $1 OR $1 = '')
+        AND status IN ('pending', 'scheduled')
+      ORDER BY deadline ASC NULLS LAST
+      LIMIT 50;
+
+  get_cognitive_states:
+    kind: postgres-sql
+    source: alloydb-workbrain
+    description: Get latest cognitive load state for all owners
+    parameters: []
+    statement: |
+      SELECT DISTINCT ON (owner) owner, load_score, capacity, 
+             overload_flag, context_switches,
+             ROUND((load_score/capacity*100)::numeric, 1) as load_percentage,
+             calculated_at
+      FROM workbrain_schema.cognitive_state
+      WHERE user_id = 'demo_user'
+      ORDER BY owner, calculated_at DESC;
+
+  find_similar_tasks:
+    kind: postgres-sql
+    source: alloydb-workbrain
+    description: Find tasks similar to a given title using pg_trgm text similarity search
+    parameters:
+      - name: task_title
+        type: string
+        description: Task title to search for similar tasks
+    statement: |
+      SELECT title, owner, status,
+             workbrain_schema.similarity(lower(title), lower($1)) AS score
+      FROM workbrain_schema.action_items
+      WHERE user_id = 'demo_user'
+        AND status IN ('pending', 'scheduled')
+        AND workbrain_schema.similarity(lower(title), lower($1)) > 0.1
+      ORDER BY score DESC
+      LIMIT 5;
+
+  get_team_analytics:
+    kind: postgres-sql
+    source: alloydb-workbrain
+    description: Get team workload analytics and overload summary
+    parameters: []
+    statement: |
+      SELECT 
+        a.owner,
+        COUNT(*) as total_tasks,
+        COUNT(CASE WHEN a.status = 'pending' THEN 1 END) as pending_tasks,
+        COUNT(CASE WHEN a.status = 'done' THEN 1 END) as completed_tasks,
+        cs.overload_flag,
+        ROUND((cs.load_score/cs.capacity*100)::numeric, 1) as load_percentage
+      FROM workbrain_schema.action_items a
+      LEFT JOIN (
+        SELECT DISTINCT ON (owner) owner, load_score, capacity, overload_flag
+        FROM workbrain_schema.cognitive_state
+        WHERE user_id = 'demo_user'
+        ORDER BY owner, calculated_at DESC
+      ) cs ON a.owner = cs.owner
+      WHERE a.user_id = 'demo_user'
+      GROUP BY a.owner, cs.overload_flag, cs.load_score, cs.capacity
+      ORDER BY load_percentage DESC NULLS LAST;
+
+toolsets:
+  workbrain_db_tools:
+    - get_action_items
+    - get_cognitive_states
+    - find_similar_tasks
+    - get_team_analytics

@@ -44,7 +44,7 @@ export function TopNav() {
       <div className="flex items-center gap-2">
         <div className="flex items-center gap-1.5 text-xs text-gray-500">
           <Zap className="w-3.5 h-3.5 text-green-500" />
-          demo_user
+          Naveen M
         </div>
       </div>
     </nav>

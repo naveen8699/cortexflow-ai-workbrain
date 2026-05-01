@@ -66,7 +66,7 @@ class DecisionLogResponse(BaseModel):
     agent: str
     decision: str
     reason: str
-    metadata: Optional[dict]
+    meta_data: Optional[dict]
     timestamp: datetime
     model_config = {"from_attributes": True}
 

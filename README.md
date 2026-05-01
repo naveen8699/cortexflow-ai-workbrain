@@ -1,187 +1,395 @@
-# WorkBrain by CortexFlow — AI Personal Operating System
-**Google ADK + Vertex AI + CopilotKit AG-UI + Cloud Run + Cloud SQL**
+# 🧠 WorkBrain by CortexFlow
 
-> Turn meeting transcripts into fully executed action plans. 5 AI agents coordinate to extract tasks, calculate cognitive load, create calendar events, and produce task cards — autonomously.
+> AI-powered meeting execution system that automatically transforms meeting transcripts into action items, cognitive load assessments, calendar events, and team notifications — in real time.
 
----
-
-## Architecture
-
-```
-Frontend (Next.js + CopilotKit)  →  FastAPI (Cloud Run)
-                                          │
-                                   ADK Orchestrator (Vertex AI Gemini)
-                                    ├── transcript_agent   → get_today_iso @tool
-                                    ├── cognitive_agent    → calculate_cognitive_load @tool
-                                    ├── scheduler_agent    → Calendar MCP @tools
-                                    └── execution_agent    → Tasks MCP @tool
-                                          │
-                                   Cloud SQL PostgreSQL
-                                   (meetings · action_items · cognitive_state · decisions_log)
-```
+[![Demo](https://img.shields.io/badge/Live%20Demo-workbrain--cortexflow.web.app-blue)](https://workbrain-cortexflow-project.web.app)
+[![Backend](https://img.shields.io/badge/Backend-Cloud%20Run-green)](https://workbrain-backend-114869691007.us-central1.run.app)
+[![License](https://img.shields.io/badge/License-Apache%202.0-yellow)](LICENSE)
 
 ---
 
-## Local Development — Step by Step
+## 🎯 Problem
 
-### Prerequisites
-- Python 3.11+, Node 18+, Docker, gcloud CLI, psql client
+Every meeting ends the same way — someone has to manually:
+- Extract action items from notes
+- Assign tasks to team members
+- Create calendar focus blocks
+- Notify the team on Slack
+- Calculate who is overloaded
 
-### Step 1 — Clone & Configure GCP
-```bash
-# Edit PROJECT_ID and DB_PASSWORD at top of file
-nano scripts/setup_gcp.sh
+This takes **2+ hours per meeting** and is error-prone. For APAC teams, it's even harder — timezone differences, public holidays, and distributed ownership make coordination painful.
 
-# Run GCP setup (enables APIs, creates Cloud SQL, service account)
-chmod +x scripts/setup_gcp.sh && ./scripts/setup_gcp.sh
+---
+
+## ✅ Solution
+
+WorkBrain listens to your meeting transcript and automatically:
+
+1. **Extracts** structured action items using Gemini 2.5 Flash with enforced JSON schema
+2. **Calculates** cognitive load per team member using Sweller's Cognitive Load Theory formula
+3. **Schedules** focus blocks on Google Calendar — skipping overloaded team members and APAC public holidays
+4. **Creates** Google Tasks cards for each action item
+5. **Notifies** the team on Slack with a rich summary
+6. **Invites** team members to their calendar focus blocks via real Google Calendar invitations
+
+All of this happens in **under 2 minutes**, with real-time progress streaming via SSE.
+
+---
+
+## 🏗️ Architecture
+
 ```
-
-### Step 2 — Database
-```bash
-# Download Cloud SQL Proxy
-curl -o cloud-sql-proxy \
-  "https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.8.0/cloud-sql-proxy.linux.amd64"
-chmod +x cloud-sql-proxy
-
-# Start proxy (keep this terminal open)
-./cloud-sql-proxy YOUR_PROJECT:us-central1:csql-workbrain --port=5432
-
-# Apply schema (new terminal)
-PGPASSWORD=WorkBrain2024! psql -h 127.0.0.1 -U workbrain_user -d workbrain -f scripts/schema.sql
-```
-
-### Step 3 — Backend
-```bash
-cd backend
-cp .env.example .env
-# Edit .env: set GCP_PROJECT_ID, DB_PASSWORD
-
-python -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-
-export GOOGLE_APPLICATION_CREDENTIALS=./service-account.json
-uvicorn main:app --reload --port 8080
-# → http://localhost:8080/docs
-```
-
-### Step 4 — Google OAuth (Calendar + Tasks)
-```bash
-chmod +x scripts/setup_oauth.sh && ./scripts/setup_oauth.sh
-# Opens browser, signs in, saves token.json
-```
-
-### Step 5 — Frontend
-```bash
-cd frontend
-cp .env.local.example .env.local
-npm install
-npm run dev
-# → http://localhost:3000
-```
-
-### Step 6 — Test Everything
-```bash
-pip install httpx  # if not already
-python scripts/test_e2e.py
+┌─────────────────────────────────────────────────────────┐
+│                    USER / BROWSER                        │
+│          Next.js 14 + CopilotKit AG-UI                  │
+│     Firebase Hosting (workbrain-cortexflow.web.app)     │
+└──────────────────────┬──────────────────────────────────┘
+                       │ SSE Stream (real-time progress)
+                       ▼
+┌─────────────────────────────────────────────────────────┐
+│               CLOUD RUN — FastAPI Backend               │
+│                  (min-instances=1)                       │
+│                                                          │
+│   ┌──────────────────────────────────────────────────┐  │
+│   │     WorkBrainPipelineAgent (ADK CustomAgent)     │  │
+│   │          Orchestrator — BaseAgent                │  │
+│   │   Manages state, DB writes, SSE progress events  │  │
+│   └──────────────────────────────────────────────────┘  │
+│                          │                               │
+│        ┌─────────────────┼─────────────────┐            │
+│        ▼                 ▼                 ▼             │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐    │
+│  │  transcript  │ │  cognitive   │ │  scheduler   │    │
+│  │    agent     │ │    agent     │ │    agent     │    │
+│  │gemini-2.5-   │ │gemini-1.5-  │ │gemini-2.5-  │    │
+│  │    flash     │ │    flash     │ │    flash     │    │
+│  │ Structured   │ │ Sweller CLT  │ │Google Search │    │
+│  │   Output     │ │   Formula    │ │  Grounding   │    │
+│  │Pydantic      │ │AlloyDB MCP   │ │Calendar MCP  │    │
+│  │  Schema      │ │              │ │APAC Holidays │    │
+│  └──────────────┘ └──────────────┘ └──────────────┘    │
+│                          │                               │
+│                          ▼                               │
+│                  ┌──────────────┐                        │
+│                  │  execution   │                        │
+│                  │    agent     │                        │
+│                  │gemini-1.5-  │                        │
+│                  │    flash     │                        │
+│                  │ Google Tasks │                        │
+│                  │  Slack MCP   │                        │
+│                  └──────────────┘                        │
+└──────┬──────────────────────────────────┬───────────────┘
+       │                                  │
+       ▼                                  ▼
+┌──────────────────┐            ┌─────────────────────┐
+│   AlloyDB AI     │            │    Google APIs       │
+│   PostgreSQL 17  │            │                      │
+│   pgvector(768)  │◄──MCP─────►│  Calendar MCP        │
+│   pg_trgm        │  Toolbox   │  Google Tasks MCP    │
+│   Embeddings     │  v0.7.0    │  Slack MCP (stdio)   │
+│ text-embedding   │            │  Search Grounding    │
+│      -004        │            │  bypass_multi_tools  │
+└──────────────────┘            └─────────────────────┘
+       │
+       ▼
+┌──────────────────────────────────────────────────────┐
+│              Vertex AI Platform                       │
+│    gemini-2.5-flash + gemini-1.5-flash               │
+│         text-embedding-004                           │
+└──────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Cloud Deployment
+## 🤖 Agent Details
 
-### Backend → Cloud Run
-```bash
-chmod +x scripts/deploy_backend.sh && ./scripts/deploy_backend.sh
-```
+### WorkBrainPipelineAgent — Orchestrator (ADK CustomAgent)
+The orchestrator is implemented as a **custom `BaseAgent`** using ADK's `_run_async_impl` pattern. It:
+- Manages the full pipeline lifecycle
+- Writes meetings, action items, embeddings, and cognitive states to AlloyDB
+- Emits real-time SSE progress events at each step
+- Handles overload detection and calendar skip logic
+- Passes structured session state between agents using `ctx.session.state`
 
-### Frontend → Firebase Hosting
-```bash
-npm install -g firebase-tools
-firebase login
-chmod +x scripts/deploy_frontend.sh && ./scripts/deploy_frontend.sh
-```
+### transcript_agent — gemini-2.5-flash
+- Uses `output_schema=TranscriptOutput` (Pydantic) for guaranteed JSON structure
+- Uses `generate_content_config` with `response_mime_type="application/json"`
+- Today's date injected via Python (not tool call) for compatibility with output_schema
+- Extracts: action items, deadlines, priorities, complexity, focus block requirements
+
+### cognitive_agent — gemini-1.5-flash
+- Calls `calculate_cognitive_load` tool implementing Sweller's CLT formula
+- Queries AlloyDB MCP Toolbox for historical cognitive state
+- Detects overload (>100% capacity) per team member
+- Separate quota bucket from 2.5-flash to avoid rate limiting
+
+### scheduler_agent — gemini-2.5-flash
+- Uses `GoogleSearchTool(bypass_multi_tools_limit=True)` for APAC holiday detection
+- Calls Google Calendar MCP to check free slots and create focus blocks
+- Skips calendar blocks for overloaded owners automatically
+- Sends real Google Calendar invitations to team member email addresses
+
+### execution_agent — gemini-1.5-flash
+- Creates Google Tasks cards via Tasks MCP
+- Posts rich Slack notification to `#workbrain-alerts` via Slack MCP (stdio)
+- Separate quota bucket for rate limit isolation
 
 ---
 
-## Project Structure
+## 🚀 Key Features
+
+### 📡 Real-time SSE Streaming
+- `POST /api/meetings/process` returns an SSE stream directly — no polling
+- Pipeline emits progress events: `started` → `progress` (steps 1-4) → `done`
+- Frontend shows live progress bar with agent names and step indicators
+- HTTP connection stays alive throughout pipeline — solves Cloud Run container shutdown issue
+
+### 🧠 Cognitive Load Theory (Sweller's CLT)
+```python
+load_score = Σ (complexity × priority × urgency_factor)
+             for each pending task
+
+urgency_factor = 2.0 if deadline < 3 days
+               = 1.5 if deadline < 7 days
+               = 1.2 if deadline < 14 days
+               = 1.0 otherwise
+
+capacity = 480 minutes (8 hours)
+load_percentage = (load_score / capacity) × 100
+overload = load_percentage > 100%
+```
+
+### 🌏 APAC-Aware Scheduling
+- Google Search grounding with `bypass_multi_tools_limit=True`
+- Detects public holidays: India, Singapore, Japan, Australia
+- Avoids scheduling focus blocks on holidays and weekends
+- Adds buffer days before major APAC holidays
+
+### 🗄️ AlloyDB AI Integration
+- Vector embeddings (768 dimensions) via `text-embedding-004`
+- `pgvector` operator `<=>` for cosine similarity search
+- `pg_trgm` `similarity()` for fuzzy text matching
+- MCP Toolbox v0.7.0 with 4 tools over SSE protocol
+- Natural language queries via CopilotKit chatbot
+
+### 📎 Multi-format File Upload
+- PDF — text extraction using pdfjs in browser
+- TXT — direct file read
+- VTT (Google Meet) — timestamp stripping
+- SRT (Zoom) — sequence number and timestamp stripping
+- No backend changes — pure frontend extraction
+
+### 👥 Real Multi-user Calendar Invites
+- Team member email mapping in config
+- Calendar events include attendees array
+- `sendUpdates="all"` sends real Gmail invitations
+- Unknown users routed to main account with owner name in description
+
+---
+
+## 🛠️ Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | Next.js 14, TypeScript, TailwindCSS, CopilotKit AG-UI |
+| Backend | FastAPI, Python 3.11, SQLAlchemy async |
+| AI Orchestration | Google ADK (Agent Development Kit) |
+| LLM | Vertex AI gemini-2.5-flash, gemini-1.5-flash |
+| Embeddings | Vertex AI text-embedding-004 |
+| Database | AlloyDB AI (PostgreSQL 17 + pgvector + pg_trgm) |
+| MCP | MCP Toolbox v0.7.0, Slack MCP, Calendar MCP |
+| Infrastructure | Cloud Run, Firebase Hosting, Google Secret Manager |
+| Search | Google Search Grounding (bypass_multi_tools_limit) |
+
+---
+
+## 📁 Project Structure
 
 ```
 workbrain/
 ├── backend/
-│   ├── main.py                    # FastAPI app + CopilotKit endpoint
-│   ├── config.py                  # Settings from .env
 │   ├── agents/
-│   │   ├── adk_tools.py           # @tool decorated functions (Gemini calls these)
-│   │   ├── adk_agents.py          # 5 LlmAgent definitions (ADK)
-│   │   └── adk_runner.py          # Runner bridge → FastAPI + DB writes
+│   │   ├── workbrain_pipeline_agent.py  # ADK CustomAgent (BaseAgent) — Orchestrator
+│   │   ├── adk_agents.py               # 4 LlmAgents + model config
+│   │   ├── adk_runner.py               # Pipeline runner + _run_agent helper
+│   │   └── adk_tools.py                # Tool implementations (calendar, cognitive load)
+│   ├── tools/
+│   │   ├── calendar_tool.py            # Google Calendar API + attendee invites
+│   │   └── slack_tool.py               # Slack SDK notification
 │   ├── db/
-│   │   ├── database.py            # Async SQLAlchemy engine
-│   │   └── models.py              # ORM: Meeting, ActionItem, CognitiveState, DecisionLog
-│   ├── models/schemas.py          # Pydantic request/response schemas
-│   ├── tools/calendar_tool.py     # Google Calendar + Tasks API wrappers
-│   └── Dockerfile
+│   │   ├── database.py                 # AsyncSession + pgvector registration
+│   │   └── models.py                   # SQLAlchemy models
+│   ├── main.py                         # FastAPI + SSE streaming endpoints
+│   ├── config.py                       # Settings + team_members email mapping
+│   ├── toolbox_config.yaml             # MCP Toolbox SQL tool definitions
+│   └── requirements.txt
 ├── frontend/
 │   └── src/
-│       ├── app/                   # Next.js pages (dashboard, meetings, tasks, decisions)
 │       ├── components/
-│       │   ├── copilot/           # CopilotKit AG-UI provider + sidebar
-│       │   ├── dashboard/         # StatCards, CognitiveLoadPanel, DecisionsFeed, SchedulePanel
-│       │   ├── meetings/          # ProcessMeetingForm, MeetingsList
-│       │   ├── tasks/             # AddTaskForm, TaskTable
-│       │   └── decisions/         # DecisionsTable
-│       ├── hooks/useDashboard.ts  # 3s polling hook
-│       ├── lib/api.ts             # Typed API client
-│       └── types/index.ts         # TypeScript types
-└── scripts/
-    ├── schema.sql                 # Cloud SQL schema
-    ├── setup_gcp.sh               # GCP one-time setup
-    ├── setup_oauth.sh             # Google OAuth setup
-    ├── deploy_backend.sh          # Cloud Run deploy
-    ├── deploy_frontend.sh         # Firebase Hosting deploy
-    └── test_e2e.py                # End-to-end test
+│       │   ├── meetings/ProcessMeetingForm.tsx  # SSE streaming + file upload
+│       │   ├── copilot/WorkBrainSidebar.tsx     # CopilotKit chatbot (6 actions)
+│       │   ├── dashboard/                       # Cognitive load, decisions, tasks
+│       │   └── tasks/AddTaskForm.tsx            # Manual task creation
+│       └── lib/api.ts                           # Typed API client
+└── README.md
 ```
 
 ---
 
-## API Endpoints
+## 🗄️ Database Schema (AlloyDB AI)
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /health | DB + ADK status check |
-| POST | /api/meetings/process | Run full 4-agent pipeline on transcript |
-| POST | /api/tasks | Add task + recalculate cognitive load |
-| GET | /api/dashboard | All data for frontend (polled every 3s) |
-| GET | /api/meetings | List processed meetings |
-| GET | /api/meetings/{id}/decisions | Decisions for one meeting |
-| GET | /api/decisions | Full decisions log |
-| GET | /api/tasks | All action items |
-| POST | /api/copilotkit | CopilotKit AG-UI streaming endpoint |
+```sql
+CREATE SCHEMA workbrain_schema;
+CREATE EXTENSION IF NOT EXISTS vector SCHEMA workbrain_schema;
+CREATE EXTENSION IF NOT EXISTS pg_trgm SCHEMA workbrain_schema;
+
+CREATE TABLE workbrain_schema.meetings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id VARCHAR NOT NULL,
+    title VARCHAR,
+    transcript TEXT,
+    summary TEXT,
+    status VARCHAR DEFAULT 'processing',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE workbrain_schema.action_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    meeting_id UUID REFERENCES workbrain_schema.meetings(id),
+    user_id VARCHAR NOT NULL,
+    title VARCHAR NOT NULL,
+    owner VARCHAR,
+    deadline DATE,
+    priority INTEGER DEFAULT 3,
+    complexity INTEGER DEFAULT 3,
+    duration_minutes INTEGER DEFAULT 60,
+    needs_focus_block BOOLEAN DEFAULT FALSE,
+    status VARCHAR DEFAULT 'pending',
+    task_id VARCHAR,
+    embedding vector(768),   -- Vertex AI text-embedding-004
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE workbrain_schema.cognitive_state (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id VARCHAR NOT NULL,
+    owner VARCHAR NOT NULL,
+    load_score FLOAT DEFAULT 0,
+    capacity FLOAT DEFAULT 480,
+    load_percentage FLOAT DEFAULT 0,
+    overload_flag BOOLEAN DEFAULT FALSE,
+    calculated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE workbrain_schema.decisions_log (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    meeting_id UUID,
+    user_id VARCHAR NOT NULL,
+    agent VARCHAR,
+    decision TEXT,
+    reason TEXT,
+    recommendation TEXT,
+    timestamp TIMESTAMPTZ DEFAULT NOW()
+);
+```
 
 ---
 
-## Key Design Decisions
+## 🔌 MCP Toolbox Configuration
 
-**Why ADK?** Google-native agent framework. `LlmAgent` with `sub_agents` is real multi-agent coordination — Gemini reads agent descriptions and decides delegation order. Judges at a Google hackathon will recognise this.
+```yaml
+sources:
+  alloydb-workbrain:
+    kind: alloydb-postgres
+    project: workbrain-cortexflow-project
+    region: us-central1
+    cluster: workbrain-cluster
+    instance: primary
+    database: workbrain
 
-**Why cognitive load in Python (not LLM)?** Deterministic math runs in <50ms, never hallucinates a percentage, costs zero LLM tokens. This is your "proprietary algorithm" story.
+tools:
+  get_action_items:
+    description: Fetch pending action items by owner from AlloyDB
+  get_cognitive_states:
+    description: Get current cognitive load state per team member
+  find_similar_tasks:
+    description: Find similar tasks using pg_trgm text similarity
+  get_team_analytics:
+    description: Aggregated team metrics and workload summary
 
-**Why Cloud SQL not AlloyDB?** Identical PostgreSQL dialect, 3-minute setup vs 15+. Same demo impression.
-
-**Why @tool not direct function calls?** ADK `@tool` makes functions callable by Gemini mid-reasoning with auto-generated JSON schema. This is what makes the agents truly autonomous rather than scripted.
-
-**Multi-user ready?** Yes. Every table has `user_id` column + index. Every query is scoped. Every agent receives user context. Adding Firebase Auth = 1-day integration.
+toolsets:
+  workbrain_db_tools:
+    tools: [get_action_items, get_cognitive_states, find_similar_tasks, get_team_analytics]
+  cognitive_tools:
+    tools: [get_cognitive_states, get_action_items]
+```
 
 ---
 
-## Demo Script
+## 📊 API Endpoints
 
-1. Open dashboard at localhost:3000
-2. Click "Load demo transcript" in Process Meeting panel
-3. Click "Process Meeting →"
-4. Watch CopilotKit sidebar stream agent reasoning
-5. Watch cognitive load meters update (Arjun goes red at 138%)
-6. Watch overload alert banner appear
-7. Watch decisions feed populate with reasons
-8. Check Google Calendar — events created
-9. Check Google Tasks — task cards created
-10. Click Decisions page — full reasoning log
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/meetings/process` | Process transcript — returns SSE stream |
+| GET | `/api/meetings/stream/{job_id}` | SSE progress stream |
+| GET | `/api/dashboard` | Full dashboard data |
+| GET | `/api/meetings` | List all meetings |
+| POST | `/api/tasks` | Add manual task + recalculate cognitive load |
+| PATCH | `/api/tasks/{id}` | Update task status |
+| POST | `/api/tasks/similar` | Find similar tasks via pg_trgm |
+| POST | `/api/tasks/sync-google` | Sync from Google Tasks |
+| GET | `/api/health` | Health check — DB + ADK status |
+
+---
+
+## 🚀 Deployment
+
+### Backend (Cloud Run)
+```bash
+gcloud builds submit ./backend \
+  --tag="us-central1-docker.pkg.dev/workbrain-cortexflow-project/workbrain/backend:latest" \
+  --project=workbrain-cortexflow-project
+
+gcloud run deploy workbrain-backend \
+  --image="us-central1-docker.pkg.dev/workbrain-cortexflow-project/workbrain/backend:latest" \
+  --region=us-central1 \
+  --service-account="workbrain-sa@workbrain-cortexflow-project.iam.gserviceaccount.com" \
+  --min-instances=1 \
+  --project=workbrain-cortexflow-project
+```
+
+### Frontend (Firebase Hosting)
+```bash
+cd frontend
+npm run build
+firebase deploy --only hosting --project workbrain-cortexflow-project
+```
+
+---
+
+## 🌐 Live URLs
+
+| Service | URL |
+|---------|-----|
+| Frontend | https://workbrain-cortexflow-project.web.app |
+| Backend API | https://workbrain-backend-114869691007.us-central1.run.app |
+| Health Check | https://workbrain-backend-114869691007.us-central1.run.app/health |
+| API Docs | https://workbrain-backend-114869691007.us-central1.run.app/docs |
+
+---
+
+## 👥 Team
+
+**CortexFlow** — Google Gen-AI Academy APAC Hackathon 2026
+
+| Name | Role |
+|------|------|
+| Naveen M | Full Stack + AI Engineering |
+| Ravi Kumar | Backend + Infrastructure |
+| Sushma M | Frontend + UX |
+
+---
+
+## 📄 License
+
+Apache License 2.0 — See [LICENSE](LICENSE) for details.

@@ -1,25 +1,26 @@
 """
-WorkBrain ADK Tools
-All functions decorated with @tool are callable by Gemini agents mid-reasoning.
-ADK auto-generates JSON schema from Python type hints.
+WorkBrain ADK Tools — compatible with google-adk 1.3.0
+In ADK 1.3.0, tools are plain Python functions wrapped with FunctionTool().
+No @tool decorator — just define the function and wrap it.
 """
 import json
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from google.adk.tools import tool
+from google.adk.tools import FunctionTool
 
 from config import settings
 
 logger = logging.getLogger(__name__)
 
 
-@tool
+# ── Plain Python functions (no decorator needed) ──────────────────────────────
+
 def get_today_iso() -> str:
     """
     Returns today's date and useful relative dates in ISO 8601 format.
-    Always call this first when transcript mentions 'today', 'this week', 'by Friday', 'end of day'.
+    Always call this first when transcript mentions 'today', 'this week', 'by Friday'.
 
     Returns:
         JSON string with today, tomorrow, this_friday, next_week dates
@@ -36,26 +37,25 @@ def get_today_iso() -> str:
     })
 
 
-@tool
 def calculate_cognitive_load(
     owner: str,
     tasks_json: str,
     capacity_minutes: float = 480.0,
 ) -> str:
     """
-    Calculates cognitive load for a person based on Sweller's Cognitive Load Theory (1988).
-    Formula: Load = SUM(duration_min * complexity_weight * urgency_factor) + (context_switches * 15)
-    Daily capacity = 480 minutes (8-hour workday). Overload threshold = 85%.
+    Calculates cognitive load for a person using Sweller's Cognitive Load Theory.
+    Formula: Load = SUM(duration * complexity_weight * urgency_factor) + (context_switches * 15)
+    Daily capacity = 480 minutes. Overload threshold = 85%.
 
     Args:
         owner: Person's name to calculate load for
         tasks_json: JSON array of tasks. Each task must have:
-                    title (str), duration_minutes (int), complexity (1-5 int),
-                    priority (1-5 int), deadline (ISO string or null)
+                    title(str), duration_minutes(int), complexity(1-5),
+                    priority(1-5), deadline(ISO string or null)
         capacity_minutes: Daily working minutes, default 480
 
     Returns:
-        JSON string containing: owner, load_score, capacity, overload_flag,
+        JSON string with owner, load_score, capacity, overload_flag,
         load_percentage, context_switches, recommendation, task_breakdown
     """
     try:
@@ -68,14 +68,14 @@ def calculate_cognitive_load(
             "owner": owner, "load_score": 0.0, "capacity": capacity_minutes,
             "overload_flag": False, "load_percentage": 0.0,
             "context_switches": 0,
-            "recommendation": f"{owner} has no tasks. Schedule is completely clear.",
+            "recommendation": f"{owner} has no tasks. Schedule is clear.",
         })
 
     DOMAINS = {
-        "code":     ["api", "backend", "frontend", "bug", "deploy", "code", "build", "test", "review", "implement", "debug"],
-        "writing":  ["doc", "report", "deck", "slide", "write", "draft", "proposal", "email", "document", "blog"],
-        "meetings": ["sync", "meeting", "call", "interview", "1:1", "standup", "demo", "presentation", "discuss"],
-        "admin":    ["invoice", "bill", "admin", "finance", "hr", "contract", "expense", "approval"],
+        "code":     ["api","backend","frontend","bug","deploy","code","build","test","review","implement","debug"],
+        "writing":  ["doc","report","deck","slide","write","draft","proposal","email","document","blog"],
+        "meetings": ["sync","meeting","call","interview","1:1","standup","demo","presentation","discuss"],
+        "admin":    ["invoice","bill","admin","finance","hr","contract","expense","approval"],
     }
 
     def get_domain(title: str) -> str:
@@ -85,7 +85,7 @@ def calculate_cognitive_load(
                 return d
         return "other"
 
-    def get_urgency(deadline_str: Optional[str], priority: int) -> float:
+    def get_urgency(deadline_str, priority: int) -> float:
         now = datetime.now(timezone.utc)
         dl_urgency = 0.5
         if deadline_str:
@@ -103,7 +103,6 @@ def calculate_cognitive_load(
                 pass
         return round(0.6 * dl_urgency + 0.4 * (priority / 5.0), 3)
 
-    # Count context switches (domain changes in task sequence)
     switches = 0
     if len(tasks) > 1:
         prev = get_domain(tasks[0].get("title", ""))
@@ -123,31 +122,28 @@ def calculate_cognitive_load(
         tl   = dur * cw * uf
         total_load += tl
         breakdown.append({
-            "title": t.get("title", ""),
-            "task_load": round(tl, 1),
-            "complexity_weight": round(cw, 2),
-            "urgency_factor": round(uf, 2),
+            "title": t.get("title",""),
+            "task_load": round(tl,1),
+            "complexity_weight": round(cw,2),
+            "urgency_factor": round(uf,2),
         })
 
-    total_load += switches * 15  # 15-min penalty per context switch
-    pct     = round((total_load / capacity_minutes) * 100, 1)
+    total_load += switches * 15
+    pct = round((total_load / capacity_minutes) * 100, 1)
     overload = total_load > capacity_minutes * settings.overload_threshold
 
     if pct >= 130:
-        rec = (f"{owner} is critically overloaded at {pct}% with {len(tasks)} tasks "
-               f"and {switches} context switches. Drop or reschedule the lowest-priority task immediately.")
+        rec = f"{owner} is critically overloaded at {pct}%. Drop or reschedule lowest-priority task."
     elif overload:
-        rec = (f"{owner} is overloaded at {pct}%. No new calendar blocks added. "
-               f"Recommend moving the lowest-priority task with a flexible deadline to tomorrow.")
+        rec = f"{owner} is overloaded at {pct}%. No new calendar blocks. Move lowest-priority flexible task."
     elif pct >= 70:
-        rec = f"{owner} is at {pct}% capacity — manageable."
+        rec = f"{owner} is at {pct}% capacity."
         if switches >= 3:
-            rec += f" {switches} context switches detected. Batching similar tasks would help."
+            rec += f" {switches} context switches detected — batch similar tasks."
     else:
-        rec = f"{owner} has available capacity at {pct}%. Can safely take on more work."
+        rec = f"{owner} has capacity at {pct}%. Can take on more work."
 
-    logger.info(f"[CognitiveLoad] {owner}: {pct}% overload={overload} switches={switches}")
-
+    logger.info(f"[CognitiveLoad] {owner}: {pct}% overload={overload}")
     return json.dumps({
         "owner": owner,
         "load_score": round(total_load, 1),
@@ -160,15 +156,14 @@ def calculate_cognitive_load(
     })
 
 
-@tool
 def get_calendar_free_slots(date_iso: str, duration_minutes: int = 60) -> str:
     """
-    Finds available time slots on a given day for scheduling focus blocks or meetings.
+    Finds available time slots on a given day for scheduling focus blocks.
     Returns morning slots first (optimal for cognitively demanding tasks).
 
     Args:
-        date_iso: Date to check in ISO 8601 format e.g. '2024-04-07T00:00:00+00:00'
-        duration_minutes: Required slot duration in minutes (e.g. 60, 90, 120)
+        date_iso: Date in ISO 8601 format e.g. '2024-04-07T00:00:00+00:00'
+        duration_minutes: Required slot duration in minutes
 
     Returns:
         JSON string with list of available slots: [{start, end, is_morning}]
@@ -177,7 +172,7 @@ def get_calendar_free_slots(date_iso: str, duration_minutes: int = 60) -> str:
         from tools.calendar_tool import get_free_slots_api
         dt = datetime.fromisoformat(date_iso.replace("Z", "+00:00"))
         slots = get_free_slots_api(dt, duration_minutes)
-        return json.dumps({"slots": slots, "date": date_iso, "duration_minutes": duration_minutes})
+        return json.dumps({"slots": slots})
     except Exception as e:
         logger.warning(f"Free slots error: {e}")
         try:
@@ -187,25 +182,29 @@ def get_calendar_free_slots(date_iso: str, duration_minutes: int = 60) -> str:
         d9 = dt.replace(hour=9, minute=0, second=0, microsecond=0)
         if d9.tzinfo is None:
             d9 = d9.replace(tzinfo=timezone.utc)
-        return json.dumps({"slots": [{"start": d9.isoformat(), "end": (d9 + timedelta(minutes=duration_minutes)).isoformat(), "is_morning": True}]})
+        return json.dumps({"slots": [{
+            "start": d9.isoformat(),
+            "end": (d9 + timedelta(minutes=duration_minutes)).isoformat(),
+            "is_morning": True,
+        }]})
 
 
-@tool
 def create_calendar_event(
     title: str,
     start_iso: str,
     end_iso: str,
     description: str = "",
+    owner: str = "",
 ) -> str:
     """
-    Creates a Google Calendar event via Calendar MCP.
-    Use prefix '🎯 Focus: ' for focus blocks, '⏰ Due: ' for deadline reminders, no prefix for meetings.
+    Creates a Google Calendar event.
+    Use prefix '🎯 Focus: ' for focus blocks, '⏰ Due: ' for reminders.
 
     Args:
         title: Clear descriptive event title
-        start_iso: Start datetime in ISO 8601 format e.g. '2024-04-07T09:00:00+00:00'
+        start_iso: Start datetime in ISO 8601 format
         end_iso: End datetime in ISO 8601 format
-        description: Context for the attendee including why this slot was chosen
+        description: Context for the attendee
 
     Returns:
         JSON string with event_id, html_link, title, start, end, status
@@ -214,7 +213,17 @@ def create_calendar_event(
         from tools.calendar_tool import create_calendar_event_api
         start = datetime.fromisoformat(start_iso.replace("Z", "+00:00"))
         end   = datetime.fromisoformat(end_iso.replace("Z", "+00:00"))
-        result = create_calendar_event_api(title, start, end, description)
+        # Look up owner email and invite them
+        attendee_emails = []
+        if owner:
+            from config import settings
+            team = settings.team_members
+            email = team.get(owner) or team.get("_default")
+            if email:
+                attendee_emails = [email]
+                if owner not in description:
+                    description = f"Owner: {owner}\n{description}".strip()
+        result = create_calendar_event_api(title, start, end, description, attendee_emails)
         logger.info(f"[CalendarMCP] Created: {title}")
         return json.dumps(result)
     except Exception as e:
@@ -226,7 +235,6 @@ def create_calendar_event(
         })
 
 
-@tool
 def create_task_card(
     title: str,
     owner: str,
@@ -234,14 +242,14 @@ def create_task_card(
     notes: str = "",
 ) -> str:
     """
-    Creates a Google Tasks card via Tasks MCP for an action item.
-    Call this for EVERY action item extracted from the meeting transcript.
+    Creates a Google Tasks card for an action item.
+    Call for every action item extracted from the meeting.
 
     Args:
         title: Clear actionable task title
-        owner: Name of the person responsible for this task
-        deadline_iso: Due date in ISO format or null if no hard deadline
-        notes: Additional context: priority level, meeting source, complexity
+        owner: Name of the person responsible
+        deadline_iso: Due date in ISO format or null
+        notes: Additional context including priority and meeting source
 
     Returns:
         JSON string with task_id, title, status
@@ -253,10 +261,20 @@ def create_task_card(
             dl = datetime.fromisoformat(str(deadline_iso).replace("Z", "+00:00"))
             if dl.tzinfo is None:
                 dl = dl.replace(tzinfo=timezone.utc)
-        full_notes = f"Owner: {owner}\n{notes}\nCreated automatically by WorkBrain."
-        result = create_task_api(title, dl, full_notes)
-        logger.info(f"[TasksMCP] Created task: {title} for {owner}")
+        result = create_task_api(title, dl, f"Owner: {owner}\n{notes}\nCreated by WorkBrain.")
+        logger.info(f"[TasksMCP] Created: {title} for {owner}")
         return json.dumps(result)
     except Exception as e:
         logger.warning(f"Task create error: {e}")
-        return json.dumps({"task_id": f"mock_{title[:12].replace(' ','_')}", "title": title, "status": "mock_created"})
+        return json.dumps({
+            "task_id": f"mock_{title[:12].replace(' ','_')}",
+            "title": title, "status": "mock_created",
+        })
+
+
+# ── Wrap functions as ADK 1.3.0 FunctionTool instances ───────────────────────
+get_today_iso_tool          = FunctionTool(get_today_iso)
+calculate_cognitive_load_tool = FunctionTool(calculate_cognitive_load)
+get_calendar_free_slots_tool  = FunctionTool(get_calendar_free_slots)
+create_calendar_event_tool    = FunctionTool(create_calendar_event)
+create_task_card_tool         = FunctionTool(create_task_card)

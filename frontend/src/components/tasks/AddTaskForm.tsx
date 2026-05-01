@@ -9,7 +9,7 @@ export function AddTaskForm({ onComplete }: Props) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
-    title: '', owner: 'demo_user', duration_minutes: 60,
+    title: '', owner: 'Naveen', duration_minutes: 60,
     priority: 3, complexity: 3, deadline: '',
   });
 
@@ -21,7 +21,7 @@ export function AddTaskForm({ onComplete }: Props) {
         ...form,
         deadline: form.deadline || undefined,
       });
-      setForm({ title: '', owner: 'demo_user', duration_minutes: 60, priority: 3, complexity: 3, deadline: '' });
+      setForm({ title: '', owner: 'Naveen', duration_minutes: 60, priority: 3, complexity: 3, deadline: '' });
       setOpen(false);
       onComplete();
     } catch (e) {

@@ -13,8 +13,8 @@ DB_INSTANCE="csql-workbrain"
 DB_NAME="workbrain"
 DB_SCHEMA="workbrain_schema"
 DB_USER="workbrain_user"
-DB_PASSWORD="password"              # ← change to a strong password
-ADMIN_PASSWORD="postgres-admin-pw"  # ← postgres superuser password (for schema setup only)
+DB_PASSWORD="Workbrain!!4321"              # ← change to a strong password
+ADMIN_PASSWORD="pgSql@@navH11"            # ← postgres superuser password (for schema setup only)
 # ── END EDIT ──────────────────────────────────────────────────────────────────
 
 SA_EMAIL="workbrain-sa@${PROJECT_ID}.iam.gserviceaccount.com"
@@ -48,6 +48,8 @@ echo "✓ APIs enabled"
 echo "Step 2: Service account..."
 gcloud iam service-accounts create workbrain-sa \
   --display-name="WorkBrain SA" --quiet 2>/dev/null || echo "  (already exists)"
+echo "Step 2.1: Service account ready | email: $SA_EMAIL"
+echo "Step 2.2: binding roles to service account| email: $SA_EMAIL"
 
 for ROLE in \
   roles/aiplatform.user \
@@ -57,10 +59,7 @@ for ROLE in \
   gcloud projects add-iam-policy-binding "$PROJECT_ID" \
     --member="serviceAccount:${SA_EMAIL}" --role="$ROLE" --quiet
 done
-
-gcloud iam service-accounts keys create ./backend/service-account.json \
-  --iam-account="$SA_EMAIL" --quiet
-echo "✓ Service account ready | key: backend/service-account.json"
+echo "✓ Service account roles assigned: $SA_EMAIL"
 
 # ── 3. Create database (if not exists) ───────────────────────────────────────
 echo "Step 3: Creating database '$DB_NAME' on instance '$DB_INSTANCE'..."
@@ -156,27 +155,39 @@ PGPASSWORD="$ADMIN_PASSWORD" psql \
 
 kill $PROXY_PID 2>/dev/null || true
 
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
 echo "=========================================="
 echo "  WorkBrain GCP setup complete!"
 echo "=========================================="
 echo ""
-echo "To run locally:"
+echo "Running in Cloud Shell — auth is automatic (no credentials file needed)."
 echo ""
-echo "  Terminal 1 — Cloud SQL Proxy:"
-echo "    ./cloud-sql-proxy ${INSTANCE_CONN} --port=5432"
+echo "Next steps (run in order in Cloud Shell):"
 echo ""
-echo "  Terminal 2 — Backend:"
-echo "    cd backend"
-echo "    python -m venv venv && source venv/bin/activate"
-echo "    pip install -r requirements.txt"
-echo "    export GOOGLE_APPLICATION_CREDENTIALS=./service-account.json"
+echo "  Step 1 — Start Cloud SQL Proxy (keep this running in background):"
+echo "    ./cloud-sql-proxy ${INSTANCE_CONN} --port=5432 &"
+echo ""
+echo "  Step 2 — Apply database schema (run as superuser):"
+echo "    PGPASSWORD=<YOUR_POSTGRES_ADMIN_PW> psql -h 127.0.0.1 -U postgres -d ${DB_NAME} -f scripts/schema.sql"
+echo ""
+echo "  Step 3 — Install Python dependencies:"
+echo "    cd backend && pip install -r requirements.txt"
+echo ""
+echo "  Step 4 — Run backend API:"
 echo "    uvicorn main:app --reload --port 8080"
+echo "    (No GOOGLE_APPLICATION_CREDENTIALS needed — Cloud Shell handles auth automatically)"
 echo ""
-echo "  Terminal 3 — Test:"
+echo "  Step 5 — In a new Cloud Shell tab, run Google OAuth for Calendar + Tasks:"
+echo "    chmod +x scripts/setup_oauth.sh && ./scripts/setup_oauth.sh"
+echo ""
+echo "  Step 6 — Run end-to-end test:"
 echo "    python scripts/test_e2e.py"
+echo ""
+echo "  Step 7 — Deploy to Cloud Run:"
+echo "    chmod +x scripts/deploy_backend.sh && ./scripts/deploy_backend.sh"
 echo ""
 echo "If schema step failed, run manually:"
 echo "  ./cloud-sql-proxy ${INSTANCE_CONN} --port=5433 &"
-echo "  PGPASSWORD=<ADMIN_PW> psql -h 127.0.0.1 -p 5433 -U postgres -d $DB_NAME -f scripts/schema.sql"
+echo "  PGPASSWORD=<ADMIN_PW> psql -h 127.0.0.1 -p 5433 -U postgres -d ${DB_NAME} -f scripts/schema.sql"

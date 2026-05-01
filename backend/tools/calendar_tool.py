@@ -19,6 +19,16 @@ SCOPES = [
 
 
 def _get_credentials():
+    import json
+    # Try environment variable first (Cloud Run uses GOOGLE_TOKEN_JSON secret)
+    token_json_env = os.environ.get("GOOGLE_TOKEN_JSON")
+    if token_json_env:
+        try:
+            from google.oauth2.credentials import Credentials as _Creds
+            token_data = json.loads(token_json_env)
+            return _Creds.from_authorized_user_info(token_data, SCOPES)
+        except Exception as e:
+            logger.warning(f"Failed to load token from GOOGLE_TOKEN_JSON env: {e}")
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
     from google_auth_oauthlib.flow import InstalledAppFlow
@@ -57,7 +67,7 @@ def setup_oauth():
 
 
 def create_calendar_event_api(
-    title: str, start_time: datetime, end_time: datetime, description: str = ""
+    title: str, start_time: datetime, end_time: datetime, description: str = "", attendee_emails: list = None
 ) -> dict:
     try:
         from googleapiclient.discovery import build
@@ -66,15 +76,19 @@ def create_calendar_event_api(
         if end_time.tzinfo is None:
             end_time = end_time.replace(tzinfo=timezone.utc)
         service = build("calendar", "v3", credentials=_get_credentials(), cache_discovery=False)
+        body = {
+            "summary": title,
+            "description": description,
+            "start": {"dateTime": start_time.isoformat(), "timeZone": "UTC"},
+            "end": {"dateTime": end_time.isoformat(), "timeZone": "UTC"},
+            "reminders": {"useDefault": False, "overrides": [{"method": "popup", "minutes": 30}]},
+        }
+        if attendee_emails:
+            body["attendees"] = [{"email": email} for email in attendee_emails]
         event = service.events().insert(
             calendarId="primary",
-            body={
-                "summary": title,
-                "description": description,
-                "start": {"dateTime": start_time.isoformat(), "timeZone": "UTC"},
-                "end": {"dateTime": end_time.isoformat(), "timeZone": "UTC"},
-                "reminders": {"useDefault": False, "overrides": [{"method": "popup", "minutes": 30}]},
-            },
+            body=body,
+            sendUpdates="all",
         ).execute()
         return {
             "event_id": event["id"],
